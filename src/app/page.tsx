@@ -12,6 +12,15 @@ export default function Home() {
     const [loading, setLoading] = useState(false);
     const [result, setResult] = useState("");
 
+    const handleDownload = () => {
+        import("jspdf").then(jsPDF => {
+            const doc = new jsPDF.jsPDF();
+            doc.setFontSize(12);
+            doc.text(result || "Aucun résultat", 10, 10);
+            doc.save("correction.pdf");
+        });
+    };
+
     const handleSubmit = async () => {
         if (!copyFile || !corrigeFile) return;
         setLoading(true);
@@ -48,11 +57,12 @@ export default function Home() {
 
             {result && (
                 <Card>
-                    <CardContent className="p-4">
-                        <h2 className="text-xl font-bold mb-2">Résultat de la correction</h2>
+                    <CardContent className="p-4 flex flex-col gap-4">
+                        <h2 className="text-xl font-bold">Résultat de la correction</h2>
                         <pre className="whitespace-pre-wrap text-sm bg-gray-100 p-2 rounded-md border border-gray-300">
                             {result}
                         </pre>
+                        <Button onClick={handleDownload}>📄 Télécharger le PDF</Button>
                     </CardContent>
                 </Card>
             )}
