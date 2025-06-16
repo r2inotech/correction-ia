@@ -1,48 +1,32 @@
-import { NextRequest, NextResponse } from "next/server";
-import { OpenAI } from "openai";
-import pdfParse from "pdf-parse";
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+import { NextRequest, NextResponse } from 'next/server';
+import { OpenAI } from 'openai';
 
-const openai = new OpenAI({
-    apiKey: process.env.OPENAI_API_KEY,
-});
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 export async function POST(req: NextRequest) {
-    const formData = await req.formData();
-    const file = formData.get("file") as File;
-    const corrige = formData.get("corrige") as File;
+    const body = await req.json();
+    const { copy, corrige } = body;
 
-    const [copyBuffer, corrigeBuffer] = await Promise.all([
-        file.arrayBuffer(),
-        corrige.arrayBuffer(),
-    ]);
-
-    const [copyText, corrigeText] = await Promise.all([
-        pdfParse(Buffer.from(copyBuffer)),
-        pdfParse(Buffer.from(corrigeBuffer)),
-    ]);
+    if (!copy || !corrige) {
+        return NextResponse.json({ error: "Champs manquants" }, { status: 400 });
+    }
 
     const prompt = `
-Corrige la copie d'élève ci-dessous à l'aide du corrigé fourni.
-Corrigé :
-""" 
-${corrigeText.text}
-"""
+Tu es un correcteur expérimenté. Voici une copie d’élève et le corrigé type. Corrige la copie et donne une note sur 20, puis fournis une explication.
 
-Copie de l'élève :
-"""
-${copyText.text}
-"""
+Corrigé type :
+${corrige}
 
-Corrige la copie de façon détaillée et pédagogique.
+Copie de l’élève :
+${copy}
 `;
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const completion: any = await openai.chat.completions.create({
+    const completion = await openai.chat.completions.create({
         model: "gpt-4",
         messages: [{ role: "user", content: prompt }],
+        temperature: 0.7,
     });
 
-    const result = completion.choices?.[0]?.message?.content || "Erreur : aucune réponse générée.";
-
-    return NextResponse.json({ result });
+    return NextResponse.json({ result: completion.choices[0].message.content });
 }

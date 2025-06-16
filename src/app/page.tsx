@@ -5,32 +5,38 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
 import { Upload } from "lucide-react";
+import * as pdfjsLib from 'pdfjs-dist';
 
 export default function Home() {
-    const [copyFile, setCopyFile] = useState<File | null>(null);
-    const [corrigeFile, setCorrigeFile] = useState<File | null>(null);
+    const [copyText, setCopyText] = useState("");
+    const [corrigeText, setCorrigeText] = useState("");
     const [loading, setLoading] = useState(false);
     const [result, setResult] = useState("");
 
-    const handleDownload = () => {
-        import("jspdf").then(jsPDF => {
-            const doc = new jsPDF.jsPDF();
-            doc.setFontSize(12);
-            doc.text(result || "Aucun résultat", 10, 10);
-            doc.save("correction.pdf");
-        });
+    const extractTextFromPdf = async (file: File): Promise<string> => {
+        const pdf = await file.arrayBuffer();
+        const loadingTask = pdfjsLib.getDocument({ data: pdf });
+        const pdfDoc = await loadingTask.promise;
+        let fullText = "";
+
+        for (let pageNum = 1; pageNum <= pdfDoc.numPages; pageNum++) {
+            const page = await pdfDoc.getPage(pageNum);
+            const content = await page.getTextContent();
+            const strings = content.items.map((item: any) => item.str);
+            fullText += strings.join(" ") + "\n";
+        }
+
+        return fullText;
     };
 
     const handleSubmit = async () => {
-        if (!copyFile || !corrigeFile) return;
+        if (!copyText || !corrigeText) return;
         setLoading(true);
-        const formData = new FormData();
-        formData.append("file", copyFile);
-        formData.append("corrige", corrigeFile);
 
         const res = await fetch("/api/correction", {
             method: "POST",
-            body: formData,
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ copy: copyText, corrige: corrigeText }),
         });
 
         const data = await res.json();
@@ -43,13 +49,27 @@ export default function Home() {
             <h1 className="text-3xl font-bold">Correction IA de Copies</h1>
             <Card>
                 <CardContent className="p-4 flex flex-col gap-4">
-                    <label className="font-semibold">1. Dépose une copie PDF OCRisée</label>
-                    <Input type="file" accept="application/pdf" onChange={(e) => setCopyFile(e.target.files?.[0] || null)} />
+                    <label>1. Dépose une copie PDF OCRisée</label>
+                    <Input
+                        type="file"
+                        accept="application/pdf"
+                        onChange={async (e) => {
+                            const file = e.target.files?.[0];
+                            if (file) setCopyText(await extractTextFromPdf(file));
+                        }}
+                    />
 
-                    <label className="font-semibold">2. Dépose le corrigé type (PDF)</label>
-                    <Input type="file" accept="application/pdf" onChange={(e) => setCorrigeFile(e.target.files?.[0] || null)} />
+                    <label>2. Dépose le corrigé type (PDF)</label>
+                    <Input
+                        type="file"
+                        accept="application/pdf"
+                        onChange={async (e) => {
+                            const file = e.target.files?.[0];
+                            if (file) setCorrigeText(await extractTextFromPdf(file));
+                        }}
+                    />
 
-                    <Button onClick={handleSubmit} disabled={loading || !copyFile || !corrigeFile}>
+                    <Button onClick={handleSubmit} disabled={loading || !copyText || !corrigeText}>
                         {loading ? "Correction en cours..." : <><Upload className="mr-2 h-4 w-4" />Lancer la correction</>}
                     </Button>
                 </CardContent>
@@ -57,12 +77,11 @@ export default function Home() {
 
             {result && (
                 <Card>
-                    <CardContent className="p-4 flex flex-col gap-4">
-                        <h2 className="text-xl font-bold">Résultat de la correction</h2>
+                    <CardContent className="p-4">
+                        <h2 className="text-xl font-bold mb-2">Résultat de la correction</h2>
                         <pre className="whitespace-pre-wrap text-sm bg-gray-100 p-2 rounded-md border border-gray-300">
                             {result}
                         </pre>
-                        <Button onClick={handleDownload}>📄 Télécharger le PDF</Button>
                     </CardContent>
                 </Card>
             )}
