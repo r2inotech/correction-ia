@@ -1,49 +1,48 @@
-import { NextRequest, NextResponse } from 'next/server';
-import OpenAI from 'openai';
+import { NextRequest, NextResponse } from "next/server";
+import { OpenAI } from "openai";
+import pdfParse from "pdf-parse";
 
 const openai = new OpenAI({
     apiKey: process.env.OPENAI_API_KEY,
 });
 
 export async function POST(req: NextRequest) {
-    try {
-        const formData = await req.formData();
+    const formData = await req.formData();
+    const file = formData.get("file") as File;
+    const corrige = formData.get("corrige") as File;
 
-        const file = formData.get('file') as File;
-        const corrige = formData.get('corrige') as File;
+    const [copyBuffer, corrigeBuffer] = await Promise.all([
+        file.arrayBuffer(),
+        corrige.arrayBuffer(),
+    ]);
 
-        if (!file || !corrige) {
-            return NextResponse.json({ error: 'Fichiers manquants.' }, { status: 400 });
-        }
+    const [copyText, corrigeText] = await Promise.all([
+        pdfParse(Buffer.from(copyBuffer)),
+        pdfParse(Buffer.from(corrigeBuffer)),
+    ]);
 
-        const [textCopy, textCorrige] = await Promise.all([
-            file.text(),
-            corrige.text(),
-        ]);
+    const prompt = `
+Corrige la copie d'élève ci-dessous à l'aide du corrigé fourni.
+Corrigé :
+""" 
+${corrigeText.text}
+"""
 
-        const prompt = `Tu es un correcteur expérimenté. Corrige la copie suivante selon le corrigé type.
-Corrigé type :
-${textCorrige}
+Copie de l'élève :
+"""
+${copyText.text}
+"""
 
-Copie d'élève :
-${textCopy}
+Corrige la copie de façon détaillée et pédagogique.
+`;
 
-Rends un commentaire structuré, objectif, et clair.`;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const completion: any = await openai.chat.completions.create({
+        model: "gpt-4",
+        messages: [{ role: "user", content: prompt }],
+    });
 
-        const completion = await openai.chat.completions.create({
-            model: 'gpt-4o',
-            messages: [{ role: 'user', content: prompt }],
-            temperature: 0.7,
-        });
+    const result = completion.choices?.[0]?.message?.content || "Erreur : aucune réponse générée.";
 
-        const result = completion.choices[0].message.content;
-
-        return NextResponse.json({ result });
-    } catch (error: any) {
-        console.error('Erreur API /correction :', error);
-        return NextResponse.json(
-            { error: 'Une erreur est survenue.' },
-            { status: 500 }
-        );
-    }
+    return NextResponse.json({ result });
 }
