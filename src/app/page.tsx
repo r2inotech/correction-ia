@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 'use client';
 
 import { useState } from "react";
@@ -6,38 +5,23 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
 import { Upload } from "lucide-react";
-import * as pdfjsLib from 'pdfjs-dist';
 
 export default function Home() {
-    const [copyText, setCopyText] = useState("");
-    const [corrigeText, setCorrigeText] = useState("");
+    const [copyFile, setCopyFile] = useState<File | null>(null);
+    const [corrigeFile, setCorrigeFile] = useState<File | null>(null);
     const [loading, setLoading] = useState(false);
     const [result, setResult] = useState("");
 
-    const extractTextFromPdf = async (file: File): Promise<string> => {
-        const pdf = await file.arrayBuffer();
-        const loadingTask = pdfjsLib.getDocument({ data: pdf });
-        const pdfDoc = await loadingTask.promise;
-        let fullText = "";
-
-        for (let pageNum = 1; pageNum <= pdfDoc.numPages; pageNum++) {
-            const page = await pdfDoc.getPage(pageNum);
-            const content = await page.getTextContent();
-            const strings = content.items.map((item: any) => item.str);
-            fullText += strings.join(" ") + "\n";
-        }
-
-        return fullText;
-    };
-
     const handleSubmit = async () => {
-        if (!copyText || !corrigeText) return;
+        if (!copyFile || !corrigeFile) return;
         setLoading(true);
+        const formData = new FormData();
+        formData.append("file", copyFile);
+        formData.append("corrige", corrigeFile);
 
         const res = await fetch("/api/correction", {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ copy: copyText, corrige: corrigeText }),
+            body: formData,
         });
 
         const data = await res.json();
@@ -45,33 +29,32 @@ export default function Home() {
         setLoading(false);
     };
 
+    const handleDownload = async () => {
+        if (typeof window === "undefined") return; // sécurité : éviter DOMMatrix côté serveur
+        const jsPDF = (await import("jspdf")).jsPDF;
+        const doc = new jsPDF();
+        doc.setFontSize(12);
+        doc.text(result || "Aucun résultat", 10, 10);
+        doc.save("correction.pdf");
+    };
+
     return (
         <main className="flex flex-col gap-6 p-4 max-w-2xl mx-auto">
             <h1 className="text-3xl font-bold">Correction IA de Copies</h1>
             <Card>
                 <CardContent className="p-4 flex flex-col gap-4">
-                    <label>1. Dépose une copie PDF OCRisée</label>
-                    <Input
-                        type="file"
-                        accept="application/pdf"
-                        onChange={async (e) => {
-                            const file = e.target.files?.[0];
-                            if (file) setCopyText(await extractTextFromPdf(file));
-                        }}
-                    />
+                    <label className="font-semibold">1. Dépose une copie PDF OCRisée</label>
+                    <Input type="file" accept="application/pdf" onChange={(e) => setCopyFile(e.target.files?.[0] || null)} />
 
-                    <label>2. Dépose le corrigé type (PDF)</label>
-                    <Input
-                        type="file"
-                        accept="application/pdf"
-                        onChange={async (e) => {
-                            const file = e.target.files?.[0];
-                            if (file) setCorrigeText(await extractTextFromPdf(file));
-                        }}
-                    />
+                    <label className="font-semibold">2. Dépose le corrigé type (PDF)</label>
+                    <Input type="file" accept="application/pdf" onChange={(e) => setCorrigeFile(e.target.files?.[0] || null)} />
 
-                    <Button onClick={handleSubmit} disabled={loading || !copyText || !corrigeText}>
-                        {loading ? "Correction en cours..." : <><Upload className="mr-2 h-4 w-4" />Lancer la correction</>}
+                    <Button onClick={handleSubmit} disabled={loading || !copyFile || !corrigeFile}>
+                        {loading ? "Correction en cours..." : (
+                            <>
+                                <Upload className="mr-2 h-4 w-4" /> Lancer la correction
+                            </>
+                        )}
                     </Button>
                 </CardContent>
             </Card>
@@ -83,6 +66,7 @@ export default function Home() {
                         <pre className="whitespace-pre-wrap text-sm bg-gray-100 p-2 rounded-md border border-gray-300">
                             {result}
                         </pre>
+                        <Button className="mt-4" onClick={handleDownload}>📄 Télécharger le PDF</Button>
                     </CardContent>
                 </Card>
             )}
